@@ -98,11 +98,9 @@ mod gen {
 
         for module in device.modules.iter() {
             for instance in module.instances.iter() {
-                for signal in instance.signals.iter() {
-                    let offset = 2;
-                    let addr = offset + 20;
-                    writeln!(b, "pub const {}: *mut u8 = {} as *mut u8;", signal.pad, addr).unwrap();
-                }
+                let offset = 2;
+                let addr = offset + 20;
+                writeln!(b, "pub const {}: *mut u8 = {} as *mut u8;", instance.name, addr).unwrap();
             }
         }
 
@@ -136,27 +134,36 @@ mod pack {
         let address_spaces = Vec::new();
 
         let modules: Vec<_> = device.get_child("peripherals").unwrap().children.iter().map(|module| {
-            let instance = module.get_child("instance").unwrap();
-            let name = instance.attributes.get("name").unwrap().clone();
+            let module_name = module.attributes.get("name").unwrap().clone();
 
-            let signals = match instance.get_child("signals") {
-                Some(signals) => signals.children.iter().map(|signal| {
-                    let pad = signal.attributes.get("pad").unwrap().clone();
-                    let index = signal.attributes.get("index").map(|i| i.parse().unwrap());
-                    Signal {
-                        pad: pad,
-                        index: index,
-                    }
-                }).collect(),
-                None =>  Vec::new(),
-            };
+            let instances = module.children.iter().filter_map(|child| {
+                if child.name != "instance" { return None; }
+                let instance = child;
+
+                let instance_name = instance.attributes.get("name").unwrap().clone();
+
+                let signals = match instance.get_child("signals") {
+                    Some(signals) => signals.children.iter().map(|signal| {
+                        let pad = signal.attributes.get("pad").unwrap().clone();
+                        let index = signal.attributes.get("index").map(|i| i.parse().unwrap());
+                        Signal {
+                            pad: pad,
+                            index: index,
+                        }
+                    }).collect(),
+                    None =>  Vec::new(),
+                };
+
+                Some(Instance {
+                    name: instance_name,
+                    signals: signals,
+                })
+
+            }).collect();
 
             Module {
-                name: name.clone(),
-                instances: vec![Instance {
-                    name: name,
-                    signals: signals,
-                }],
+                name: module_name,
+                instances: instances,
             }
         }).collect();
 
