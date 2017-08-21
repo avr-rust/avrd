@@ -4,3 +4,6 @@ version = "0.1.0"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
 
 [dependencies]
+
+[build-dependencies]
+xmltree = "0.4"
