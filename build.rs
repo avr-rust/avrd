@@ -3,12 +3,14 @@ extern crate xmltree;
 /// The extension on the pack files.
 const PACK_FILE_EXT: &'static str = "atdf";
 
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug)]
 pub struct Pack {
     pub device: Device,
     pub variants: Vec<Variant>,
+    pub modules: Vec<Module>,
 }
 
 #[derive(Debug)]
@@ -71,13 +73,13 @@ pub struct RegisterGroup {
     pub registers: Vec<Register>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Register {
     pub name: String,
     pub caption: String,
     pub offset: u32,
     pub size: u32,
-    pub mask: u32,
+    pub mask: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -91,6 +93,23 @@ fn main() {
 
     let packs = pack::load_all(&crate_root.join("packs")).unwrap();
     gen::all(&crate_root.join("src").join("gen"), &packs).unwrap();
+}
+
+impl Register {
+    /// Get the union between two descriptions of the same register.
+    pub fn union(&self, with: &Self) -> Self {
+        assert_eq!(self.name, with.name,
+                   "can only take the union between different descriptions of the same register");
+
+        let mut result = self.clone();
+
+        match (result.mask, with.mask) {
+            (None, Some(v)) => result.mask = Some(v), // rhs is more specific
+            _ => (),
+        }
+
+        result
+    }
 }
 
 mod gen {
@@ -108,7 +127,7 @@ mod gen {
         // Create modules for each pack.
         for pack in packs.iter() {
             let module_name = self::pack_module_name(pack);
-            let registers = self::registers(&pack.device);
+            let registers = self::registers(&pack);
 
             let mut file = File::create(path.join(format!("{}.rs", module_name))).unwrap();
             writeln!(file, "{}", registers).unwrap();
@@ -130,18 +149,82 @@ mod gen {
         pack.device.name.to_lowercase()
     }
 
-    pub fn registers(device: &Device) -> String {
+    pub fn registers(pack: &Pack) -> String {
         let mut b = Cursor::new(Vec::new());
 
-        for module in device.modules.iter() {
+        for register in ordered_registers(pack) {
+            let ty = if register.size == 1 { "u8" } else { "u16" };
+            writeln!(b, "pub const {}: *mut {} = {:#X} as *mut {};", register.name, ty, register.offset, ty).unwrap();
+        }
+
+        String::from_utf8(b.into_inner()).unwrap()
+    }
+
+    fn ordered_registers(pack: &Pack) -> Vec<Register> {
+        let mut unique_registers = self::unique_registers(pack);
+        insert_high_low_variants(&mut unique_registers);
+
+        let mut registers: Vec<Register> = unique_registers.into_iter().map(|a| a.1).collect();
+        registers.sort_by_key(|r| r.offset);
+
+        registers
+    }
+
+    fn insert_high_low_variants(registers: &mut HashMap<String, Register>) {
+        let wide_registers: Vec<_> = registers.values()
+                                        .filter(|r| r.size == 2)
+                                        .cloned()
+                                        .collect();
+
+        for r in wide_registers {
+            let (high, low) = high_low_variants(&r);
+
+            if !registers.contains_key(&high.name) {
+                registers.insert(high.name.clone(), high);
+            }
+            if !registers.contains_key(&low.name) {
+                registers.insert(low.name.clone(), low);
+            }
+        }
+    }
+
+    fn high_low_variants(r: &Register) -> (Register, Register) {
+        assert_eq!(2, r.size, "only 16-bit registers have high low variants");
+
+        (
+            Register { name: r.name.clone() + "H",
+                       caption: r.caption.clone() + " high byte",
+                       offset: r.offset + 1,
+                       size: r.size / 2,
+                       mask: None },
+            Register { name: r.name.clone() + "L",
+                       caption: r.caption.clone() + " low byte",
+                       offset: r.offset + 0,
+                       size: r.size / 2,
+                       mask: None },
+        )
+    }
+
+    fn unique_registers(pack: &Pack) -> HashMap<String, Register> {
+        let mut result = HashMap::new();
+
+        for module in pack.modules.iter() {
             for register_group in module.register_groups.iter() {
                 for register in register_group.registers.iter() {
-                    writeln!(b, "pub const {}: *mut u8 = {} as *mut u8;", register.name, register.offset).unwrap();
+                    // Check if we've already seen this register.
+                    // Remove it if so and combine it with the current Register.
+                    let r: Register = if let Some(ref existing) = result.remove(&register.name) {
+                        register.union(existing)
+                    } else {
+                        register.clone()
+                    };
+
+                    result.insert(r.name.clone(), r);
                 }
             }
         }
 
-        String::from_utf8(b.into_inner()).unwrap()
+        result
     }
 }
 
@@ -172,12 +255,15 @@ mod pack {
 
     fn read_pack(root: &Element) -> Pack {
         let device_element = root.get_child("devices").unwrap().get_child("device").unwrap();
+
         let device = self::read_device(&device_element);
         let variants = root.get_child("variants").unwrap().children.iter().map(self::read_variant).collect();
+        let modules = root.get_child("modules").unwrap().children.iter().map(self::read_module);
 
         Pack {
             device: device,
             variants: variants,
+            modules: modules.collect(),
         }
     }
 
@@ -193,6 +279,7 @@ mod pack {
                                    .collect();
 
         let device_name = device.attributes.get("name").unwrap().clone();
+        println!("read device '{}'", device_name);
 
         Device {
             name: device_name,
@@ -271,7 +358,7 @@ mod pack {
         let (name, caption) = (register_group.attributes.get("name").unwrap(),
                                register_group.attributes.get("caption").unwrap());
         let registers = register_group.children.iter().filter_map(|child| match &child.name[..] {
-            "register" => Some(self::read_register(register_group)),
+            "register" => Some(self::read_register(child)),
             _ => unimplemented!(),
         }).collect();
 
@@ -290,12 +377,14 @@ mod pack {
     /// <register caption="EEPROM Address Register  Bytes" name="EEAR" offset="0x41" size="2" mask="0x01FF"/>
     /// ```
     fn read_register(register: &Element) -> Register {
+        let name = register.attributes.get("name").unwrap().clone();
+        println!("foo: '{:?} - {}'", register.name, name);
         Register {
             name: register.attributes.get("name").unwrap().clone(),
             caption: register.attributes.get("caption").unwrap().clone(),
             offset: read_int(register.attributes.get("offset")).clone(),
             size: register.attributes.get("size").unwrap().parse().unwrap(),
-            mask: read_int(register.attributes.get("mask")).clone()
+            mask: read_opt_int(register.attributes.get("mask")).clone()
         }
     }
 
@@ -357,6 +446,16 @@ mod pack {
         } else {
             value.parse().unwrap()
         }
+    }
+
+    fn read_opt_int(value: Option<&String>) -> Option<u32> {
+        value.map(|v| {
+            if v.starts_with("0x") {
+                read_hex(Some(v))
+            } else {
+                v.parse().unwrap()
+            }
+        })
     }
 
     fn read_hex(value: Option<&String>) -> u32 {
