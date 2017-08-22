@@ -3,6 +3,9 @@ extern crate xmltree;
 /// The extension on the pack files.
 const PACK_FILE_EXT: &'static str = "atdf";
 
+const PACKS: &'static [&'static str] = &["atmega", "tiny", "xmegaa", "xmegab",
+                                         "xmegac", "xmegad", "xmegae", "automotive"];
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -246,7 +249,12 @@ mod pack {
     use xmltree::Element;
 
     pub fn load_all(path: &Path) -> Result<Vec<Pack>, io::Error> {
-        let pack_paths = find_packs(&path.join("atmega")).unwrap();
+        let mut pack_paths = Vec::new();
+
+        for pack_name in PACKS {
+            pack_paths.extend(find_packs(&path.join(pack_name)).unwrap());
+        }
+
         Ok(pack_paths.into_iter().map(|path| self::load(&path).unwrap()).collect())
     }
 
@@ -255,6 +263,7 @@ mod pack {
         let mut body = String::new();
         file.read_to_string(&mut body)?;
 
+        println!("loading pack '{}'", path.display());
         let root = Element::parse(body.as_bytes()).unwrap();
 
         Ok(self::read_pack(&root))
@@ -275,6 +284,8 @@ mod pack {
     }
 
     fn read_device(device: &Element) -> Device {
+        let device_name = device.attributes.get("name").unwrap().clone();
+
         let modules = device.get_child("peripherals").unwrap()
                             .children.iter()
                             .map(self::read_module)
@@ -284,9 +295,6 @@ mod pack {
                                    .unwrap().children.iter()
                                    .map(self::read_address_space)
                                    .collect();
-
-        let device_name = device.attributes.get("name").unwrap().clone();
-        println!("read device '{}'", device_name);
 
         Device {
             name: device_name,
@@ -366,7 +374,9 @@ mod pack {
                                register_group.attributes.get("caption").unwrap());
         let registers = register_group.children.iter().filter_map(|child| match &child.name[..] {
             "register" => Some(self::read_register(child)),
-            _ => unimplemented!(),
+            // FIXME: leave this out for now, ATtiny816 has nested register-group
+            // _ => panic!("unknown register-group child: '{}'", child.name),
+            _ => None,
         }).collect();
 
         RegisterGroup {
@@ -384,8 +394,6 @@ mod pack {
     /// <register caption="EEPROM Address Register  Bytes" name="EEAR" offset="0x41" size="2" mask="0x01FF"/>
     /// ```
     fn read_register(register: &Element) -> Register {
-        let name = register.attributes.get("name").unwrap().clone();
-        println!("foo: '{:?} - {}'", register.name, name);
         Register {
             name: register.attributes.get("name").unwrap().clone(),
             caption: register.attributes.get("caption").unwrap().clone(),
