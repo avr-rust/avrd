@@ -3,6 +3,9 @@ extern crate xmltree;
 /// The extension on the pack files.
 const PACK_FILE_EXT: &'static str = "atdf";
 
+const PACKS: &'static [&'static str] = &["atmega", "tiny", "xmegaa", "xmegab",
+                                         "xmegac", "xmegad", "xmegae", "automotive"];
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -246,7 +249,12 @@ mod pack {
     use xmltree::Element;
 
     pub fn load_all(path: &Path) -> Result<Vec<Pack>, io::Error> {
-        let pack_paths = find_packs(&path.join("atmega")).unwrap();
+        let mut pack_paths = Vec::new();
+
+        for pack_name in PACKS {
+            pack_paths.extend(find_packs(&path.join(pack_name)).unwrap());
+        }
+
         Ok(pack_paths.into_iter().map(|path| self::load(&path).unwrap()).collect())
     }
 
