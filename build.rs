@@ -134,10 +134,10 @@ mod gen {
         let mut b = Cursor::new(Vec::new());
 
         for module in device.modules.iter() {
-            for instance in module.instances.iter() {
-                let offset = 2;
-                let addr = offset + 20;
-                writeln!(b, "pub const {}: *mut u8 = {} as *mut u8;", instance.name, addr).unwrap();
+            for register_group in module.register_groups.iter() {
+                for register in register_group.registers.iter() {
+                    writeln!(b, "pub const {}: *mut u8 = {} as *mut u8;", register.name, register.offset).unwrap();
+                }
             }
         }
 
