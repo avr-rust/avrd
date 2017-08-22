@@ -3,6 +3,17 @@ name = "avrd"
 version = "0.1.0"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
 
+description = """
+Device-specific constants and information for all AVR microcontrollers
+"""
+
+license = "MIT"
+repository = "https://github.com/avr-rust/avrd"
+documentation = "https://docs.rs/avrd"
+
+keywords = ["avr", "mcu", "io", "constants", "pins"]
+categories = ["embedded"]
+
 [dependencies]
 
 [build-dependencies]
