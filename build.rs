@@ -146,9 +146,38 @@ mod gen {
     fn generate_entry_module(output_path: &Path, module_names: &[String]) -> Result<(), io::Error> {
         let mut mod_rs = File::create(output_path.join("mod.rs"))?;
 
+        writeln!(mod_rs, "// Device definitions")?;
         for module_name in module_names {
             writeln!(mod_rs, "pub mod {};", module_name)?;
         }
+        writeln!(mod_rs)?;
+
+        const CURRENT_MOD_SUMMARY: &'static str = "Contains definitions for the current AVR device";
+
+        writeln!(mod_rs, "/// {}", CURRENT_MOD_SUMMARY)?;
+        writeln!(mod_rs, "///")?;
+        writeln!(mod_rs, "/// **NOTE**: We are showing the ATmega328 here, even though the library")?;
+        writeln!(mod_rs, "/// is not targeting a real AVR device. If you compile this library for")?;
+        writeln!(mod_rs, "/// a specific AVR MCU, the module for that device will aliased here.")?;
+        writeln!(mod_rs, "// If we are targeting a non-AVR device, just pick the ATmega328p so")?;
+        writeln!(mod_rs, "// that users can see what the API would look like")?;
+        writeln!(mod_rs, "//")?;
+        writeln!(mod_rs, "// Note that we reexport rather than alias so that we can add a note about")?;
+        writeln!(mod_rs, "// this behaviour to the documentation.")?;
+        writeln!(mod_rs, "#[cfg(not(target_arch = \"avr\"))]")?;
+        writeln!(mod_rs, "pub mod current {{ pub use super::atmega328::*; }}")?;
+        writeln!(mod_rs)?;
+        writeln!(mod_rs, "/// {}", CURRENT_MOD_SUMMARY)?;
+        writeln!(mod_rs, "// If we are targeting AVR, lookup the current device's module")?;
+        writeln!(mod_rs, "// and alias it to the `current` module.")?;
+        writeln!(mod_rs, "#[cfg(target_arch = \"avr\")]")?;
+        writeln!(mod_rs, "pub mod current {{")?;
+        writeln!(mod_rs, "    // NOTE: 'target_cpu' is a cfg flag specific to the avr-rust fork")?;
+        for module_name in module_names {
+            writeln!(mod_rs, "    #[cfg(target_cpu = \"{}\")] pub use super::{} as current;",
+                     module_name, module_name)?;
+        }
+        writeln!(mod_rs, "}}")?;
 
         Ok(())
     }
@@ -175,8 +204,8 @@ mod gen {
         writeln!(w, "//!")?;
 
         writeln!(w, "//! # Variants")?;
-        writeln!(w, "//! |        | Pinout | Package | Operating temp | Operating voltage | Max speed |")?;
-        writeln!(w, "//! |--------|--------|---------|----------------|-------------------|-----------|")?;
+        writeln!(w, "//! |        | Pinout | Package | Operating temperature | Operating voltage | Max speed |")?;
+        writeln!(w, "//! |--------|--------|---------|-----------------------|-------------------|-----------|")?;
         for variant in pack.variants.iter() {
             let speed_mhz = variant.speed_max_hz / 1_000_000;
             writeln!(w, "//! | {} | {} | {} | {}°C - {}°C | {}V - {}V | {} MHz |",
@@ -229,17 +258,22 @@ mod gen {
             "AWEX" => false,
             "BANDGAP" => false,
             "BATTERY_PROTECTION" => false,
+            "BOD" => false,
             "BOOT_LOAD" => false,
             "CALIB" => false,
             "CAN" => false,
+            "CCL" => false,
             "CELL_BALANCING" => false,
             "CFD" => false,
+            "CLKCTRL" => false,
             "CHARGER_DETECT" => false,
             "CHFLT" => false,
             "CLK" => false,
             "COULOMB_COUNTER" => false,
             "CPU" => false,
+            "CPUINT" => false,
             "CRC" => false,
+            "CRCSCAN" => false,
             "CURRENT_SOURCE" => false,
             "DAC" => false,
             "DDDLFRX" => false,
@@ -292,6 +326,7 @@ mod gen {
             "MISC" => false,
             "MOD" => false,
             "NVM" => false,
+            "NVMCTRL" => false,
             "OCCOUNT" => false,
             "OSC" => false,
             "PLL" => false,
@@ -302,6 +337,7 @@ mod gen {
             "PORTC" => false,
             "PORTCFG" => false,
             "PORTD" => false,
+            "PORTMUX" => false,
             "PORTS" => false,
             "PR" => false,
             "PS2" => false,
@@ -310,6 +346,7 @@ mod gen {
             "PWRCTRL" => false,
             "RSSIB" => false,
             "RST" => false,
+            "RSTCTRL" => false,
             "RTC" => false,
             "RTC32" => false,
             "RTC_TIMER" => false,
@@ -319,18 +356,23 @@ mod gen {
             "SFIFO" => false,
             "SIGROW" => false,
             "SLEEP" => false,
+            "SLPCTRL" => false,
             "SPI" => false, // SPI information
             "SPI2" => false,
             "SSM" => false,
             "SUP" => false,
             "SYMCH" => false,
             "SYMCNT" => false,
+            "SYSCFG" => false,
             "TC" => false,
             "TC10" => false,
             "TC16" => false,
             "TC2" => false,
             "TC8" => false,
             "TC8_ASYNC" => false,
+            "TCA" => false,
+            "TCB" => false,
+            "TCD" => false,
             "TEMPER" => false,
             "TIMER0_WDT" => false,
             "TIMER1" => false,
@@ -358,11 +400,13 @@ mod gen {
             "USB_DEVICE" => false,
             "USB_GLOBAL" => false,
             "USB_HOST" => false,
+            "USERROW" => false,
             "USI" => false,
             "VBAT" => false,
             "VMON" => false,
             "VOLTAGE_REGULATOR" => false,
             "VPORT" => false,
+            "VREF" => false,
             "VX_MODE" => false,
             "WAKEUP_TIMER" => false,
             "WDT" => false,
