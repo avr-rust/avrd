@@ -154,6 +154,13 @@ mod gen {
 
         for register in ordered_registers(pack) {
             let ty = if register.size == 1 { "u8" } else { "u16" };
+
+            if !register.caption.is_empty() {
+                let mut caption = register.caption.trim().to_owned();
+                if !caption.ends_with('.') { caption.push('.') }
+
+                writeln!(b, "/// {}", caption).unwrap();
+            }
             writeln!(b, "pub const {}: *mut {} = {:#X} as *mut {};", register.name, ty, register.offset, ty).unwrap();
         }
 
