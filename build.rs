@@ -11,21 +11,21 @@ const PACKS: &'static [&'static str] = &[
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Pack {
     pub device: Device,
     pub variants: Vec<Variant>,
     pub modules: Vec<Module>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Device {
     pub name: String,
     pub address_spaces: Vec<AddressSpace>,
     pub modules: Vec<Module>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Variant {
     pub name: String,
     pub pinout: Option<String>,
@@ -37,7 +37,7 @@ pub struct Variant {
     pub speed_max_hz: u64,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AddressSpace {
     pub id: String,
     pub name: String,
@@ -46,7 +46,7 @@ pub struct AddressSpace {
     pub segments: Vec<MemorySegment>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MemorySegment {
     pub start_address: u32,
     pub size: u32,
@@ -58,20 +58,20 @@ pub struct MemorySegment {
     pub page_size: Option<u32>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Module {
     pub name: String,
     pub instances: Vec<Instance>,
     pub register_groups: Vec<RegisterGroup>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Instance {
     pub name: String,
     pub signals: Vec<Signal>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RegisterGroup {
     pub name: String,
     pub caption: String,
@@ -87,9 +87,10 @@ pub struct Register {
     pub mask: Option<u32>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Signal {
     pub pad: String,
+    pub group: Option<String>,
     pub index: Option<u8>,
 }
 
@@ -171,20 +172,205 @@ mod gen {
     pub fn pack_module_doc(pack: &Pack, w: &mut Write)
         -> Result<(), io::Error> {
         writeln!(w, "//! The AVR {} microcontroller", pack.device.name)?;
-        writeln!(w)?;
+        writeln!(w, "//!")?;
 
         writeln!(w, "//! # Variants")?;
-        writeln!(w, "//! |        | Pinout | Package | Operating temp (°C) | Operating voltage (V) | Max speed |")?;
-        writeln!(w, "//! |--------|--------|---------|---------------------|-----------------------|-----------|")?;
+        writeln!(w, "//! |        | Pinout | Package | Operating temp | Operating voltage | Max speed |")?;
+        writeln!(w, "//! |--------|--------|---------|----------------|-------------------|-----------|")?;
         for variant in pack.variants.iter() {
             let speed_mhz = variant.speed_max_hz / 1_000_000;
-            writeln!(w, "//! | {} | {} | {} | {} - {} | {} - {} | {} MHz |",
+            writeln!(w, "//! | {} | {} | {} | {}°C - {}°C | {}V - {}V | {} MHz |",
                      variant.name, variant.pinout.clone().unwrap_or_else(|| String::new()),
                      variant.package, variant.temperature_min,
                      variant.temperature_max, variant.voltage_min, variant.voltage_max,
                      speed_mhz)?;
         }
+        writeln!(w, "//!")?;
+
+        writeln!(w, "//! # Registers by module (not exhaustive)")?;
+
+        for module in modules_by_relevance(pack.device.modules.clone()) {
+            writeln!(w, "//!")?;
+            writeln!(w, "//! ## {} modules",
+                     module.name)?;
+            writeln!(w, "//!")?;
+
+            for instance in module.instances.iter() {
+                writeln!(w, "//! * {}",
+                         instance.name)?;
+
+                for signal in instance.signals.iter() {
+                    if let Some(ref group) = signal.group {
+                        writeln!(w, "//!     * {} ({})", group, signal.pad)?;
+                    }
+                }
+            }
+        }
         Ok(())
+    }
+
+    fn modules_by_relevance(mut modules: Vec<Module>) -> Vec<Module> {
+        modules = modules.into_iter().filter(should_document_module).collect();
+        modules.sort_by_key(|m| match &m.name[..] {
+            "PORT" => 1,
+            _ => 2,
+        });
+        modules
+    }
+
+    fn should_document_module(module: &Module) -> bool {
+        match &module.name[..] {
+            "AC" => false,
+            "ADC" => true, // Analog to digital converters.
+            "AD_CONVERTER" => false,
+            "AES" => false,
+            "AFE" => false,
+            "ANALOG_COMPARATOR" => false,
+            "AWEX" => false,
+            "BANDGAP" => false,
+            "BATTERY_PROTECTION" => false,
+            "BOOT_LOAD" => false,
+            "CALIB" => false,
+            "CAN" => false,
+            "CELL_BALANCING" => false,
+            "CFD" => false,
+            "CHARGER_DETECT" => false,
+            "CHFLT" => false,
+            "CLK" => false,
+            "COULOMB_COUNTER" => false,
+            "CPU" => false,
+            "CRC" => false,
+            "CURRENT_SOURCE" => false,
+            "DAC" => false,
+            "DDDLFRX" => false,
+            "DEBOUNCE" => false,
+            "DEBUG" => false,
+            "DEMOD" => false,
+            "DEVICEID" => false,
+            "DFIFO" => false,
+            "DFLL" => false,
+            "DMA" => false,
+            "EBI" => false,
+            "EDMA" => false,
+            "EEPROM" => true, // EEPROM information
+            "EUSART" => false,
+            "EVSYS" => false,
+            "EXINT" => false,
+            "EXTERNAL_INTERRUPT" => false,
+            "FAULT" => false,
+            "FE" => false,
+            "FET" => false,
+            "FLASH" => true, // Flash information
+            "FREQS" => false,
+            "FRSYNC" => false,
+            "FUSE" => false,
+            "GPIO" => false, // General purpose IOs
+            "GPIOREGS" => false,
+            "GPIOREGS_DVCC" => false,
+            "GPIOREGS_LFVCC" => false,
+            "HIRES" => false,
+            "IDCHK" => false,
+            "IDSCAN" => false,
+            "INT" => true, // Unsure what this means, sounds relevant
+            "IRCOM" => false,
+            "IRLED" => false,
+            "JTAG" => true, // JTAG information.
+            "LCD" => false,
+            "LED" => false,
+            "LFRX" => false,
+            "LF_FIFO" => false,
+            "LF_PROTOCOL_HANDLER" => false,
+            "LF_RECEIVER" => false,
+            "LF_RSSI" => false,
+            "LF_TIMER" => false,
+            "LF_TRANSPONDER" => false,
+            "LINUART" => false,
+            "LIN_UART" => false,
+            "LOCKBIT" => false,
+            "MCU" => false,
+            "MEM" => false,
+            "MISC" => false,
+            "MOD" => false,
+            "NVM" => false,
+            "OCCOUNT" => false,
+            "OSC" => false,
+            "PLL" => false,
+            "PMIC" => false,
+            "PORT" => true, // Port information
+            "PORTA" => false,
+            "PORTB" => false,
+            "PORTC" => false,
+            "PORTCFG" => false,
+            "PORTD" => false,
+            "PORTS" => false,
+            "PR" => false,
+            "PS2" => false,
+            "PSC" => false,
+            "PTC" => false,
+            "PWRCTRL" => false,
+            "RSSIB" => false,
+            "RST" => false,
+            "RTC" => false,
+            "RTC32" => false,
+            "RTC_TIMER" => false,
+            "RXBUF" => false,
+            "RXDSP" => false,
+            "SENSOR_INTERFACE" => false,
+            "SFIFO" => false,
+            "SIGROW" => false,
+            "SLEEP" => false,
+            "SPI" => false, // SPI information
+            "SPI2" => false,
+            "SSM" => false,
+            "SUP" => false,
+            "SYMCH" => false,
+            "SYMCNT" => false,
+            "TC" => false,
+            "TC10" => false,
+            "TC16" => false,
+            "TC2" => false,
+            "TC8" => false,
+            "TC8_ASYNC" => false,
+            "TEMPER" => false,
+            "TIMER0_WDT" => false,
+            "TIMER1" => false,
+            "TIMER2" => false,
+            "TIMER3" => false,
+            "TIMER4" => false,
+            "TIMER5" => false,
+            "TIMER_COUNTER_0" => false,
+            "TIMER_COUNTER_1" => false,
+            "TIMER_COUNTER_2" => false,
+            "TIMER_COUNTER_3" => false,
+            "TMO" => false,
+            "TOCPM" => false,
+            "TPLF_CAL" => false,
+            "TRACE" => false,
+            "TRX24" => false,
+            "TWI" => false,
+            "TWI1" => false,
+            "TWI2" => false,
+            "TXDSP" => false,
+            "TXM" => false,
+            "USART" => true, // Serial
+            "USART0" => false,
+            "USB" => true, // Universal serial bus
+            "USB_DEVICE" => false,
+            "USB_GLOBAL" => false,
+            "USB_HOST" => false,
+            "USI" => false,
+            "VBAT" => false,
+            "VMON" => false,
+            "VOLTAGE_REGULATOR" => false,
+            "VPORT" => false,
+            "VX_MODE" => false,
+            "WAKEUP_TIMER" => false,
+            "WDT" => false,
+            "WEX" => false,
+            "XCL" => false,
+            "XOCD" => false,
+            _ => panic!("unknown module type: '{}'", module.name),
+        }
     }
 
     pub fn pack_registers(pack: &Pack, w: &mut Write)
@@ -387,11 +573,10 @@ mod pack {
     }
 
     fn read_signal(signal: &Element) -> Signal {
-        let pad = signal.attributes.get("pad").unwrap().clone();
-        let index = signal.attributes.get("index").map(|i| i.parse().unwrap());
         Signal {
-            pad: pad,
-            index: index,
+            pad: signal.attributes.get("pad").unwrap().clone(),
+            group: signal.attributes.get("pad").map(|p| p.clone()),
+            index: signal.attributes.get("index").map(|i| i.parse().unwrap()),
         }
     }
 
