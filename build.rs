@@ -3,8 +3,10 @@ extern crate xmltree;
 /// The extension on the pack files.
 const PACK_FILE_EXT: &'static str = "atdf";
 
-const PACKS: &'static [&'static str] = &["atmega", "tiny", "xmegaa", "xmegab",
-                                         "xmegac", "xmegad", "xmegae", "automotive"];
+const PACKS: &'static [&'static str] = &[
+    "atmega", "tiny", "xmegaa", "xmegab",
+    "xmegac", "xmegad", "xmegae", "automotive",
+];
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -118,7 +120,7 @@ impl Register {
 mod gen {
     use super::*;
     use std::io::prelude::*;
-    use std::io::{self, Cursor};
+    use std::io;
     use std::fs::{self, File};
     use std::path::Path;
 
@@ -130,19 +132,33 @@ mod gen {
         // Create modules for each pack.
         for pack in packs.iter() {
             let module_name = self::pack_module_name(pack);
-            let registers = self::registers(&pack);
+            let module_path = path.join(format!("{}.rs", module_name));
 
-            let mut file = File::create(path.join(format!("{}.rs", module_name))).unwrap();
-            writeln!(file, "{}", registers).unwrap();
-
+            generate_pack_module(pack, &module_path)?;
             module_names.push(module_name);
         }
 
-        // Create mod.rs in output folder.
-        let mut mod_rs = File::create(path.join("mod.rs"))?;
+        generate_entry_module(path, &module_names)
+    }
+
+    /// Generate a `mod.rs` file that binds a list of submodules.
+    fn generate_entry_module(output_path: &Path, module_names: &[String]) -> Result<(), io::Error> {
+        let mut mod_rs = File::create(output_path.join("mod.rs"))?;
+
         for module_name in module_names {
-            writeln!(mod_rs, "pub mod {};", module_name).unwrap();
+            writeln!(mod_rs, "pub mod {};", module_name)?;
         }
+
+        Ok(())
+    }
+
+    /// Generates a self-contained module for a single pack file.
+    fn generate_pack_module(pack: &Pack, path: &Path) -> Result<(), io::Error> {
+        let mut file = File::create(path)?;
+
+        self::pack_module_doc(pack, &mut file)?;
+        writeln!(file)?;
+        self::pack_registers(pack, &mut file)?;
 
         Ok(())
     }
@@ -152,9 +168,27 @@ mod gen {
         pack.device.name.to_lowercase()
     }
 
-    pub fn registers(pack: &Pack) -> String {
-        let mut b = Cursor::new(Vec::new());
+    pub fn pack_module_doc(pack: &Pack, w: &mut Write)
+        -> Result<(), io::Error> {
+        writeln!(w, "//! The AVR {} microcontroller", pack.device.name)?;
+        writeln!(w)?;
 
+        writeln!(w, "//! # Variants")?;
+        writeln!(w, "//! |        | Pinout | Package | Operating temp (°C) | Operating voltage (V) | Max speed |")?;
+        writeln!(w, "//! |--------|--------|---------|---------------------|-----------------------|-----------|")?;
+        for variant in pack.variants.iter() {
+            let speed_mhz = variant.speed_max_hz / 1_000_000;
+            writeln!(w, "//! | {} | {} | {} | {} - {} | {} - {} | {} MHz |",
+                     variant.name, variant.pinout.clone().unwrap_or_else(|| String::new()),
+                     variant.package, variant.temperature_min,
+                     variant.temperature_max, variant.voltage_min, variant.voltage_max,
+                     speed_mhz)?;
+        }
+        Ok(())
+    }
+
+    pub fn pack_registers(pack: &Pack, w: &mut Write)
+        -> Result<(), io::Error>  {
         for register in ordered_registers(pack) {
             let ty = if register.size == 1 { "u8" } else { "u16" };
 
@@ -162,12 +196,13 @@ mod gen {
                 let mut caption = register.caption.trim().to_owned();
                 if !caption.ends_with('.') { caption.push('.') }
 
-                writeln!(b, "/// {}", caption).unwrap();
+                writeln!(w, "/// {}", caption).unwrap();
             }
-            writeln!(b, "pub const {}: *mut {} = {:#X} as *mut {};", register.name, ty, register.offset, ty).unwrap();
+            writeln!(w, "pub const {}: *mut {} = {:#X} as *mut {};",
+                     register.name, ty, register.offset, ty)?;
         }
 
-        String::from_utf8(b.into_inner()).unwrap()
+        Ok(())
     }
 
     fn ordered_registers(pack: &Pack) -> Vec<Register> {
