@@ -14,7 +14,12 @@ documentation = "https://docs.rs/avrd"
 keywords = ["avr", "mcu", "io", "constants", "pins"]
 categories = ["embedded"]
 
+[features]
+default = []
+# Enable all microcontrollers.
+all_mcus = []
+
 [dependencies]
 
 [build-dependencies]
-xmltree = "0.4"
+avr-mcu = "0.1"
