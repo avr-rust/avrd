@@ -7,6 +7,8 @@
 //! The information for each device is separated into submodules, named after
 //! the microcontroller itself.
 
+#![no_std]
+
 pub use self::gen::*;
 
 mod gen;
