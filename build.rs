@@ -7,9 +7,16 @@ fn main() {
     let mcus = if cfg!(feature = "all_mcus") {
         avr_mcu::microcontrollers().to_owned()
     } else {
-        let current_mcu = avr_mcu::current::mcu()
-            .expect("no target cpu set");
-        vec![current_mcu]
+        // By default, when compiling for AVR we should hard error if
+        // microcontroller is not specified.
+        if cfg!(arch = "avr") {
+            let current_mcu = avr_mcu::current::mcu()
+                .expect("no target cpu set");
+            vec![current_mcu]
+        } else {
+            // On non-avr architectures, support all microcontrollers.
+            avr_mcu::microcontrollers().to_owned()
+        }
     };
 
     gen::all(&crate_root.join("src").join("gen"), &mcus).unwrap();
