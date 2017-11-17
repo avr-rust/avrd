@@ -1,6 +1,7 @@
 # avrd
 
 [![Crates.io](https://img.shields.io/crates/v/avrd.svg)](https://crates.io/crates/avrd)
+[![Build Status](https://travis-ci.org/avr-rust/avrd.svg?branch=master)](https://travis-ci.org/avr-rust/avrd)
 [![license](https://img.shields.io/github/license/avr-rust/avrd.svg)]()
 
 AVR device definitons in Rust.
