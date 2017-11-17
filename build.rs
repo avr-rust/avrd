@@ -1,4 +1,5 @@
 extern crate avr_mcu;
+
 use std::path::Path;
 
 fn main() {
@@ -19,12 +20,18 @@ fn main() {
         }
     };
 
+    // Useful for test
+    // let mcus = vec![
+    //     avr_mcu::microcontroller("ata5795").clone(),
+    //     avr_mcu::microcontroller("atmega328").clone(), // required when compiling for PC
+    // ];
+
     gen::all(&crate_root.join("src").join("gen"), &mcus).unwrap();
 }
 
 mod gen {
     use avr_mcu::*;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::fs::{self, File};
     use std::io::prelude::*;
     use std::io;
@@ -40,6 +47,7 @@ mod gen {
             let module_name = self::mcu_module_name(mcu);
             let module_path = path.join(format!("{}.rs", module_name));
 
+            eprintln!("generating module for {}", mcu.device.name);
             generate_mcu_module(mcu, &module_path)?;
             module_names.push(module_name);
         }
@@ -93,7 +101,7 @@ mod gen {
 
         self::mcu_module_doc(mcu, &mut file)?;
         writeln!(file)?;
-        self::mcu_registers(mcu, &mut file)?;
+        self::mcu_module_code(mcu, &mut file)?;
 
         Ok(())
     }
@@ -121,220 +129,57 @@ mod gen {
         }
         writeln!(w, "//!")?;
 
-        writeln!(w, "//! # Registers by module (not exhaustive)")?;
-
-        for module in modules_by_relevance(mcu.device.modules.clone()) {
-            writeln!(w, "//!")?;
-            writeln!(w, "//! ## {} modules",
-                     module.name)?;
-            writeln!(w, "//!")?;
-
-            for instance in module.instances.iter() {
-                writeln!(w, "//! * {}",
-                         instance.name)?;
-
-                for signal in instance.signals.iter() {
-                    if let Some(ref group) = signal.group {
-                        writeln!(w, "//!     * {} ({})", group, signal.pad)?;
-                    }
-                }
-            }
-        }
         Ok(())
     }
 
-    fn modules_by_relevance(mut modules: Vec<Module>) -> Vec<Module> {
-        modules = modules.into_iter().filter(should_document_module).collect();
-        modules.sort_by_key(|m| match &m.name[..] {
-            "PORT" => 1,
-            _ => 2,
-        });
-        modules
-    }
-
-    fn should_document_module(module: &Module) -> bool {
-        match &module.name[..] {
-            "AC" => false,
-            "ADC" => true, // Analog to digital converters.
-            "AD_CONVERTER" => false,
-            "AES" => false,
-            "AFE" => false,
-            "ANALOG_COMPARATOR" => false,
-            "AWEX" => false,
-            "BANDGAP" => false,
-            "BATTERY_PROTECTION" => false,
-            "BOD" => false,
-            "BOOT_LOAD" => false,
-            "CALIB" => false,
-            "CAN" => false,
-            "CCL" => false,
-            "CELL_BALANCING" => false,
-            "CFD" => false,
-            "CLKCTRL" => false,
-            "CHARGER_DETECT" => false,
-            "CHFLT" => false,
-            "CLK" => false,
-            "COULOMB_COUNTER" => false,
-            "CPU" => false,
-            "CPUINT" => false,
-            "CRC" => false,
-            "CRCSCAN" => false,
-            "CURRENT_SOURCE" => false,
-            "DAC" => false,
-            "DDDLFRX" => false,
-            "DEBOUNCE" => false,
-            "DEBUG" => false,
-            "DEMOD" => false,
-            "DEVICEID" => false,
-            "DFIFO" => false,
-            "DFLL" => false,
-            "DMA" => false,
-            "EBI" => false,
-            "EDMA" => false,
-            "EEPROM" => true, // EEPROM information
-            "EUSART" => false,
-            "EVSYS" => false,
-            "EXINT" => false,
-            "EXTERNAL_INTERRUPT" => false,
-            "FAULT" => false,
-            "FE" => false,
-            "FET" => false,
-            "FLASH" => true, // Flash information
-            "FREQS" => false,
-            "FRSYNC" => false,
-            "FUSE" => false,
-            "GPIO" => false, // General purpose IOs
-            "GPIOREGS" => false,
-            "GPIOREGS_DVCC" => false,
-            "GPIOREGS_LFVCC" => false,
-            "HIRES" => false,
-            "IDCHK" => false,
-            "IDSCAN" => false,
-            "INT" => true, // Unsure what this means, sounds relevant
-            "IRCOM" => false,
-            "IRLED" => false,
-            "JTAG" => true, // JTAG information.
-            "LCD" => false,
-            "LED" => false,
-            "LFRX" => false,
-            "LF_FIFO" => false,
-            "LF_PROTOCOL_HANDLER" => false,
-            "LF_RECEIVER" => false,
-            "LF_RSSI" => false,
-            "LF_TIMER" => false,
-            "LF_TRANSPONDER" => false,
-            "LINUART" => false,
-            "LIN_UART" => false,
-            "LOCKBIT" => false,
-            "MCU" => false,
-            "MEM" => false,
-            "MISC" => false,
-            "MOD" => false,
-            "NVM" => false,
-            "NVMCTRL" => false,
-            "OCCOUNT" => false,
-            "OSC" => false,
-            "PLL" => false,
-            "PMIC" => false,
-            "PORT" => true, // Port information
-            "PORTA" => false,
-            "PORTB" => false,
-            "PORTC" => false,
-            "PORTCFG" => false,
-            "PORTD" => false,
-            "PORTMUX" => false,
-            "PORTS" => false,
-            "PR" => false,
-            "PS2" => false,
-            "PSC" => false,
-            "PTC" => false,
-            "PWRCTRL" => false,
-            "RSSIB" => false,
-            "RST" => false,
-            "RSTCTRL" => false,
-            "RTC" => false,
-            "RTC32" => false,
-            "RTC_TIMER" => false,
-            "RXBUF" => false,
-            "RXDSP" => false,
-            "SENSOR_INTERFACE" => false,
-            "SFIFO" => false,
-            "SIGROW" => false,
-            "SLEEP" => false,
-            "SLPCTRL" => false,
-            "SPI" => false, // SPI information
-            "SPI2" => false,
-            "SSM" => false,
-            "SUP" => false,
-            "SYMCH" => false,
-            "SYMCNT" => false,
-            "SYSCFG" => false,
-            "TC" => false,
-            "TC10" => false,
-            "TC16" => false,
-            "TC2" => false,
-            "TC8" => false,
-            "TC8_ASYNC" => false,
-            "TCA" => false,
-            "TCB" => false,
-            "TCD" => false,
-            "TEMPER" => false,
-            "TIMER0_WDT" => false,
-            "TIMER1" => false,
-            "TIMER2" => false,
-            "TIMER3" => false,
-            "TIMER4" => false,
-            "TIMER5" => false,
-            "TIMER_COUNTER_0" => false,
-            "TIMER_COUNTER_1" => false,
-            "TIMER_COUNTER_2" => false,
-            "TIMER_COUNTER_3" => false,
-            "TMO" => false,
-            "TOCPM" => false,
-            "TPLF_CAL" => false,
-            "TRACE" => false,
-            "TRX24" => false,
-            "TWI" => false,
-            "TWI1" => false,
-            "TWI2" => false,
-            "TXDSP" => false,
-            "TXM" => false,
-            "USART" => true, // Serial
-            "USART0" => false,
-            "USB" => true, // Universal serial bus
-            "USB_DEVICE" => false,
-            "USB_GLOBAL" => false,
-            "USB_HOST" => false,
-            "USERROW" => false,
-            "USI" => false,
-            "VBAT" => false,
-            "VMON" => false,
-            "VOLTAGE_REGULATOR" => false,
-            "VPORT" => false,
-            "VREF" => false,
-            "VX_MODE" => false,
-            "WAKEUP_TIMER" => false,
-            "WDT" => false,
-            "WEX" => false,
-            "XCL" => false,
-            "XOCD" => false,
-            _ => panic!("unknown module type: '{}'", module.name),
-        }
-    }
-
-    pub fn mcu_registers(mcu: &Mcu, w: &mut Write)
+    pub fn mcu_module_code(mcu: &Mcu, w: &mut Write)
         -> Result<(), io::Error>  {
-        for register in ordered_registers(mcu) {
-            let ty = if register.size == 1 { "u8" } else { "u16" };
+        let registers = ordered_registers(mcu);
+        let register_bitfields = documentable_bitfields(&registers);
+
+        writeln!(w, "#![allow(non_upper_case_globals)]")?;
+        writeln!(w)?;
+
+        for register in registers.iter() {
+            let ty = integer_type(register.size);
 
             if !register.caption.is_empty() {
                 let mut caption = register.caption.trim().to_owned();
                 if !caption.ends_with('.') { caption.push('.') }
 
-                writeln!(w, "/// {}", caption).unwrap();
+                writeln!(w, "/// {}", caption)?;
+            } else {
+                writeln!(w, "/// {} register", register.name)?;
             }
+
+            let mut bitfields = register_bitfields.iter().filter_map(|&(reg,bitfield)| {
+                if reg == register { Some(bitfield) } else { None }
+            }).peekable();
+
+            if bitfields.peek().is_some() {
+                writeln!(w, "///")?;
+                writeln!(w, "/// Bitfields:")?;
+                writeln!(w, "///")?;
+                writeln!(w, "/// | Name | Mask (binary) |")?;
+                writeln!(w, "/// | ---- | ------------- |")?;
+                while let Some(bitfield) = bitfields.next() {
+                    writeln!(w, "/// | {} | {:b} |", bitfield.name, bitfield.mask)?;
+                }
+            }
+
             writeln!(w, "pub const {}: *mut {} = {:#X} as *mut {};",
                      register.name, ty, register.offset, ty)?;
+            writeln!(w)?;
+        }
+
+        for (register, bitfield) in register_bitfields {
+            let ty = integer_type(bitfield.size);
+
+            writeln!(w, "/// Bitfield on register {}", register.name)?;
+            writeln!(w, "pub const {}: *mut {} = {:#X} as *mut {};",
+                     bitfield.name, ty, bitfield.mask, ty)?;
+            writeln!(w)?;
+
         }
 
         Ok(())
@@ -376,12 +221,16 @@ mod gen {
                        caption: r.caption.clone() + " high byte",
                        offset: r.offset + 1,
                        size: r.size / 2,
-                       mask: None },
+                       mask: None,
+                       bitfields: Vec::new(), // these are already in parent.
+                       rw: r.rw.clone() },
             Register { name: r.name.clone() + "L",
                        caption: r.caption.clone() + " low byte",
                        offset: r.offset + 0,
                        size: r.size / 2,
-                       mask: None },
+                       mask: None,
+                       bitfields: Vec::new(), // these are already in parent.
+                       rw: r.rw.clone() },
         )
     }
 
@@ -406,5 +255,73 @@ mod gen {
 
         result
     }
-}
 
+    /// Gets the integer type of a specified width.
+    fn integer_type(byte_count: u32) -> &'static str {
+        match byte_count {
+            1 => "u8",
+            2 => "u16",
+            4 => "u32",
+            _ => panic!("failed to get type of {}", byte_count),
+        }
+    }
+
+    /// Collects all bitfields for a set of registers that are documentable.
+    ///
+    /// Some pack files (such as the one for atmega328p) do not have unique
+    /// bitfield names.
+    ///
+    /// For example, all of the timer control registers (`TCCR0A`, `TCCR1B`, ..)
+    /// on the ATmega328p individually define bitfields named `WGM1` with
+    /// different masks but a shared name. Note that even though these fields
+    /// are in the packfiles, they do not appear in AVR-GCC's `iom328p.h`.
+    ///
+    /// This function specifically considers bitfields with unique
+    /// names as documentable.
+    ///
+    /// In the case where we have an ambiguous name for a bitfield, it
+    /// should be skipped.
+    fn documentable_bitfields(registers: &[Register]) -> Vec<(&Register, &Bitfield)> {
+        let register_names: HashSet<&str> = registers.iter().map(|r| &r.name[..]).collect();
+
+        // A hash map of bitfield names to possible instantiations.
+        let mut history: HashMap<&str, Vec<(&Register, &Bitfield)>> = HashMap::new();
+
+        for register in registers.iter(){
+            for bitfield in register.bitfields.iter() {
+                let bitfields = history.entry(&bitfield.name).
+                    or_insert_with(|| Vec::new());
+                // Track the bitfield of this bitfield.
+                bitfields.push((register, bitfield));
+            }
+        }
+
+        // Convert the hash map to a list and sort it so it is deterministic.
+        let mut register_bitfields: Vec<_> = history.into_iter().map(|(_, register_bitfields)| register_bitfields).collect();
+        register_bitfields.sort_by_key(|register_bitfields| &register_bitfields[0].0.name);
+
+        let unique_bitfields = register_bitfields.into_iter().filter_map(|register_bitfields| {
+            if register_bitfields.len() == 1 {
+                Some(register_bitfields.into_iter().next().unwrap())
+            } else {
+                None
+            }
+        });
+
+        // Skip bitmasks that cover all bits or share the same name as their parent register.
+        // There are strange cases like this in the packfiles.
+        let bitfields = unique_bitfields.filter(|&(register, bitfield)| {
+            let full_mask = match register.size {
+                1 => 0xff,
+                2 => 0xffff,
+                _ => panic!("register is too large"),
+            };
+
+            bitfield.mask != full_mask &&
+                bitfield.name != register.name &&
+                !register_names.contains(&bitfield.name[..])
+        });
+
+        bitfields.collect()
+    }
+}

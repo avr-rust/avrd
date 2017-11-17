@@ -22,4 +22,4 @@ all_mcus = []
 [dependencies]
 
 [build-dependencies]
-avr-mcu = "0.1"
+avr-mcu = "0.2"
