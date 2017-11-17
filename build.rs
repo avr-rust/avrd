@@ -120,9 +120,10 @@ mod gen {
         writeln!(w, "//! |        | Pinout | Mcuage | Operating temperature | Operating voltage | Max speed |")?;
         writeln!(w, "//! |--------|--------|---------|-----------------------|-------------------|-----------|")?;
         for variant in mcu.variants.iter() {
+            let pinout_label = variant.pinout.as_ref().map(|p| p.replace('_', "-").to_owned()).unwrap_or_else(|| String::new());
             let speed_mhz = variant.speed_max_hz / 1_000_000;
             writeln!(w, "//! | {} | {} | {} | {}°C - {}°C | {}V - {}V | {} MHz |",
-                     variant.name, variant.pinout.clone().unwrap_or_else(|| String::new()),
+                     variant.name, pinout_label,
                      variant.package, variant.temperature_min,
                      variant.temperature_max, variant.voltage_min, variant.voltage_max,
                      speed_mhz)?;
