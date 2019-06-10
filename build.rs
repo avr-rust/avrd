@@ -117,7 +117,7 @@ mod gen {
         writeln!(w, "//!")?;
 
         writeln!(w, "//! # Variants")?;
-        writeln!(w, "//! |        | Pinout | Mcuage | Operating temperature | Operating voltage | Max speed |")?;
+        writeln!(w, "//! |        | Pinout | Mcu age | Operating temperature | Operating voltage | Max speed |")?;
         writeln!(w, "//! |--------|--------|---------|-----------------------|-------------------|-----------|")?;
         for variant in mcu.variants.iter() {
             let pinout_label = variant.pinout.as_ref().map(|p| p.replace('_', "-").to_owned()).unwrap_or_else(|| String::new());
@@ -145,12 +145,9 @@ mod gen {
             let ty = integer_type(register.size);
 
             if !register.caption.is_empty() {
-                let mut caption = register.caption.trim().to_owned();
-                if !caption.ends_with('.') { caption.push('.') }
-
-                writeln!(w, "/// {}", caption)?;
+                writeln!(w, "/// {}", format_caption(&register.caption))?;
             } else {
-                writeln!(w, "/// {} register", register.name)?;
+                writeln!(w, "/// `{}` register", register.name)?;
             }
 
             let mut bitfields = register_bitfields.iter().filter_map(|&(reg,bitfield)| {
@@ -176,14 +173,53 @@ mod gen {
         for (register, bitfield) in register_bitfields {
             let ty = integer_type(bitfield.size);
 
-            writeln!(w, "/// Bitfield on register {}", register.name)?;
+            writeln!(w, "/// Bitfield on register `{}`", register.name)?;
             writeln!(w, "pub const {}: *mut {} = {:#X} as *mut {};",
                      bitfield.name, ty, bitfield.mask, ty)?;
             writeln!(w)?;
 
         }
 
+        for value_group in ordered_value_groups(&mcu) {
+            if !value_group.caption.is_empty() {
+                writeln!(w, "/// {}", value_group.caption)?;
+            } else {
+                writeln!(w, "/// `{}` value group", value_group.name)?;
+            }
+            writeln!(w, "#[allow(non_upper_case_globals)]")? ;
+            writeln!(w, "pub mod {} {{", value_group.name.to_lowercase())?;
+            for val in unique_value_group_values(&value_group).iter() {
+                let first_char = val.name.chars().next().expect("empty value name");
+                let name = if !first_char.is_alphabetic() && first_char != '_' {
+                    format!("_{}", val.name)
+                } else {
+                    val.name.to_owned()
+                };
+
+                if !val.caption.is_empty() {
+                    let ty = "u32";
+                    writeln!(w, "   /// {}", format_caption(&val.caption))?;
+                    writeln!(w, "   pub const {}: {} = {:#X};", name, ty, val.value)?;
+                }
+            }
+            writeln!(w, "}}")?;
+            writeln!(w)?;
+        }
+
         Ok(())
+    }
+
+    fn format_caption(caption: &str) -> String {
+        let mut result = caption.to_owned();
+        // Escape special characters in markdown
+        result = result.replace("[", "\\[").replace("]", "\\]");
+
+        // Trim and make a sentence
+        result = result.trim().to_owned();
+        if !result.ends_with('.') {
+            result.push('.')
+        }
+        result
     }
 
     fn ordered_registers(mcu: &Mcu) -> Vec<Register> {
@@ -194,6 +230,19 @@ mod gen {
         registers.sort_by_key(|r| r.offset);
 
         registers
+    }
+
+    fn ordered_value_groups(mcu: &Mcu) -> Vec<ValueGroup> {
+        let mut value_groups = Vec::new();
+        for module in mcu.modules.iter() {
+            for value_group in module.value_groups.iter() {
+                value_groups.push(value_group.clone());
+            }
+        }
+        value_groups = unique_value_groups(&value_groups);
+        value_groups.sort_by(|vg1, vg2| vg1.partial_cmp(vg2).unwrap());
+
+        value_groups
     }
 
     fn insert_high_low_variants(registers: &mut HashMap<String, Register>) {
@@ -255,6 +304,50 @@ mod gen {
         }
 
         result
+    }
+
+    fn unique_value_groups(value_groups: &[ValueGroup]) -> Vec<ValueGroup> {
+        let mut value_groups = value_groups.to_owned();
+        loop {
+            let mut remove_idx = None;
+            for (idx, value_group) in value_groups.iter().enumerate() {
+                if value_groups.iter().filter(|vg| {
+                    if vg.name == value_group.name {
+                        assert_eq!(*vg, value_group);
+                        true
+                    } else {
+                        false
+                    }
+                }).count() > 1 {
+                    remove_idx = Some(idx);
+                }
+            }
+            match remove_idx {
+                Some(idx) => value_groups.remove(idx),
+                None => break,
+            };
+        }
+        value_groups
+    }
+
+    /// Collect al the values in a ValueGroup and deduplicate the,/
+    ///
+    /// As in the bitfield descriptions, the value-group decriptions contain
+    /// values with duplicate names. We will skip every value which is
+    /// ambiguous. See `documentable_bitfields` for more context on this
+    /// issue.
+    fn unique_value_group_values(value_group: &ValueGroup) -> Vec<Value> {
+        let mut values = value_group.values.clone();
+        let mut remove_names = HashSet::new();
+        for value in values.iter() {
+            if values.iter().filter(|v| v.name == value.name).count() > 1 {
+                remove_names.insert(value.name.to_owned());
+            }
+        }
+        for name in remove_names {
+            values.retain(|v| v.name != name);
+        }
+        values
     }
 
     /// Gets the integer type of a specified width.
