@@ -111,7 +111,7 @@ mod gen {
         mcu.device.name.to_lowercase()
     }
 
-    pub fn mcu_module_doc(mcu: &Mcu, w: &mut Write)
+    pub fn mcu_module_doc(mcu: &Mcu, w: &mut dyn Write)
         -> Result<(), io::Error> {
         writeln!(w, "//! The AVR {} microcontroller", mcu.device.name)?;
         writeln!(w, "//!")?;
@@ -133,7 +133,7 @@ mod gen {
         Ok(())
     }
 
-    pub fn mcu_module_code(mcu: &Mcu, w: &mut Write)
+    pub fn mcu_module_code(mcu: &Mcu, w: &mut dyn Write)
         -> Result<(), io::Error>  {
         let registers = ordered_registers(mcu);
         let register_bitfields = documentable_bitfields(&registers);
