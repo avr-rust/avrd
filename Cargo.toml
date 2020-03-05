@@ -23,3 +23,8 @@ all_mcus = []
 
 [build-dependencies]
 avr-mcu = "0.2"
+
+[profile.dev]
+# Most of the build consists of generating the mcu description files. So
+# enable optimizations to speed this process.
+opt-level = 2
