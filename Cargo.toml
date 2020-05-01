@@ -1,6 +1,6 @@
 [package]
 name = "avrd"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
 
 description = """
@@ -15,14 +15,14 @@ keywords = ["avr", "mcu", "io", "constants", "pins"]
 categories = ["embedded"]
 
 [features]
-default = []
+default = [ "all_mcus" ]
 # Enable all microcontrollers.
 all_mcus = []
 
 [dependencies]
 
 [build-dependencies]
-avr-mcu = { path = "../avr-mcu" }
+avr-mcu = { git = "https://github.com/Logarithmus/avr-mcu", branch = "master" }
 
 [profile.dev]
 # Most of the build consists of generating the mcu description files. So
