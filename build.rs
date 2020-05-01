@@ -23,10 +23,8 @@ mod gen {
 
     pub fn all(path: &Path, mcus: &[Mcu]) -> Result<(), io::Error> {
         fs::create_dir_all(path)?;
-        let module_names: Vec<String> = mcus
-            .iter()
-            .map(|mcu| mcu.device.name.to_lowercase())
-            .collect();
+        let module_names: Vec<String> =
+            mcus.iter().map(|mcu| mcu.device.name.to_lowercase()).collect();
 
         // Create modules for each mcu.
         for (mcu, module_name) in mcus.iter().zip(module_names.iter()) {
@@ -101,11 +99,8 @@ mod gen {
              //! |--------|--------|---------|-----------------------|-------------------|-----------|"
         )?;
         for variant in &mcu.variants {
-            let pinout_label = variant
-                .pinout
-                .as_ref()
-                .map(|p| p.replace('_', "-").to_owned())
-                .unwrap_or_default();
+            let pinout_label =
+                variant.pinout.as_ref().map(|p| p.replace('_', "-").to_owned()).unwrap_or_default();
             let speed_mhz = variant.speed_max_hz / 1_000_000;
             writeln!(
                 w,
@@ -207,11 +202,7 @@ mod gen {
 
     fn format_caption(caption: &str) -> String {
         // Escape special characters and trim
-        let mut result = caption
-            .replace("[", "\\[")
-            .replace("]", "\\]")
-            .trim()
-            .to_owned();
+        let mut result = caption.replace("[", "\\[").replace("]", "\\]").trim().to_owned();
         if !result.ends_with('.') {
             result.push('.')
         }
@@ -237,11 +228,7 @@ mod gen {
     }
 
     fn insert_high_low_variants(registers: &mut HashMap<String, Register>) {
-        let wide_registers: Vec<_> = registers
-            .values()
-            .filter(|r| r.size == 2)
-            .cloned()
-            .collect();
+        let wide_registers: Vec<_> = registers.values().filter(|r| r.size == 2).cloned().collect();
 
         for r in wide_registers {
             let (high, low) = high_low_variants(&r);
@@ -382,10 +369,8 @@ mod gen {
         }
 
         // Convert the hash map to a list and sort it so it is deterministic.
-        let mut register_bitfields: Vec<_> = history
-            .into_iter()
-            .map(|(_, register_bitfields)| register_bitfields)
-            .collect();
+        let mut register_bitfields: Vec<_> =
+            history.into_iter().map(|(_, register_bitfields)| register_bitfields).collect();
         register_bitfields.sort_by_key(|register_bitfields| &register_bitfields[0].0.name);
 
         let unique_bitfields = register_bitfields
