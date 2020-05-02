@@ -22,7 +22,7 @@ all_mcus = []
 [dependencies]
 
 [build-dependencies]
-avr-mcu = { git = "https://github.com/Logarithmus/avr-mcu", branch = "master" }
+avr-mcu = "0.3"
 
 [profile.dev]
 # Most of the build consists of generating the mcu description files. So
