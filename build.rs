@@ -5,10 +5,26 @@ use std::path::Path;
 fn main() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    let mcus = match cfg!(feature = "all_mcus") {
-        true => avr_mcu::microcontrollers().to_owned(),
-        false => vec![avr_mcu::current::mcu().expect("no target cpu set")],
+    let mcus = if cfg!(feature = "all_mcus") {
+        avr_mcu::microcontrollers().to_owned()
+    } else {
+        // By default, when compiling for AVR we should hard error if
+        // microcontroller is not specified.
+        if cfg!(arch = "avr") {
+            let current_mcu = avr_mcu::current::mcu()
+                .expect("no target cpu set");
+            vec![current_mcu]
+        } else {
+            // On non-avr architectures, support all microcontrollers.
+            avr_mcu::microcontrollers().to_owned()
+        }
     };
+
+    // Useful for test
+    // let mcus = vec![
+    //     avr_mcu::microcontroller("ata5795").clone(),
+    //     avr_mcu::microcontroller("atmega328").clone(), // required when compiling for PC
+    // ];
 
     gen::all(&crate_root.join("src").join("gen"), &mcus).unwrap();
 }
@@ -17,20 +33,23 @@ mod gen {
     use avr_mcu::*;
     use std::collections::{HashMap, HashSet};
     use std::fs::{self, File};
-    use std::io;
     use std::io::prelude::*;
+    use std::io;
     use std::path::Path;
 
     pub fn all(path: &Path, mcus: &[Mcu]) -> Result<(), io::Error> {
         fs::create_dir_all(path)?;
-        let module_names: Vec<String> =
-            mcus.iter().map(|mcu| mcu.device.name.to_lowercase()).collect();
+
+        let mut module_names = Vec::new();
 
         // Create modules for each mcu.
-        for (mcu, module_name) in mcus.iter().zip(module_names.iter()) {
+        for mcu in mcus.iter() {
+            let module_name = self::mcu_module_name(mcu);
             let module_path = path.join(format!("{}.rs", module_name));
-            eprintln!("Generating module for {}", mcu.device.name);
+
+            eprintln!("generating module for {}", mcu.device.name);
             generate_mcu_module(mcu, &module_path)?;
+            module_names.push(module_name);
         }
 
         generate_entry_module(path, &module_names)
@@ -41,38 +60,35 @@ mod gen {
         let mut mod_rs = File::create(output_path.join("mod.rs"))?;
 
         writeln!(mod_rs, "// Device definitions")?;
-        for name in module_names {
-            writeln!(mod_rs, "pub mod {};", name)?;
+        for module_name in module_names {
+            writeln!(mod_rs, "pub mod {};", module_name)?;
         }
-        writeln!(
-            mod_rs,
-            "\n\
-             /// Contains definitions for the current AVR device\n\
-             //\n
-             // **NOTE**: We are showing the ATmega328 here, even though the library\n\
-             // is not targeting a real AVR device. If you compile this library for\n\
-             // a specific AVR MCU, the module for that device will aliased here.\n\
-             // If we are targeting a non-AVR device, just pick the ATmega328p so\n\
-             // that users can see what the API would look like\n\
-             //\n\
-             // Note that we reexport rather than alias so that we can add a note about\n\
-             // this behaviour to the documentation.\n\
-             #[cfg(not(target_arch = \"avr\"))]\n\
-             pub mod current {{ pub use super::atmega328::*; }}\n\
-             \n\
-             /// Contains definitions for the current AVR device\n\
-             // If we are targeting AVR, lookup the current device's module\n\
-             // and alias it to the `current` module.\n\
-             #[cfg(target_arch = \"avr\")]\n\
-             pub mod current {{\n    \
-             // NOTE: 'target_cpu' is a cfg flag specific to the avr-rust fork"
-        )?;
-        for name in module_names {
-            writeln!(
-                mod_rs,
-                "    #[cfg(target_cpu = \"{}\")] pub use super::{} as current;",
-                name, name
-            )?;
+        writeln!(mod_rs)?;
+
+        const CURRENT_MOD_SUMMARY: &'static str = "Contains definitions for the current AVR device";
+
+        writeln!(mod_rs, "/// {}", CURRENT_MOD_SUMMARY)?;
+        writeln!(mod_rs, "///")?;
+        writeln!(mod_rs, "/// **NOTE**: We are showing the ATmega328 here, even though the library")?;
+        writeln!(mod_rs, "/// is not targeting a real AVR device. If you compile this library for")?;
+        writeln!(mod_rs, "/// a specific AVR MCU, the module for that device will aliased here.")?;
+        writeln!(mod_rs, "// If we are targeting a non-AVR device, just pick the ATmega328p so")?;
+        writeln!(mod_rs, "// that users can see what the API would look like")?;
+        writeln!(mod_rs, "//")?;
+        writeln!(mod_rs, "// Note that we reexport rather than alias so that we can add a note about")?;
+        writeln!(mod_rs, "// this behaviour to the documentation.")?;
+        writeln!(mod_rs, "#[cfg(not(target_arch = \"avr\"))]")?;
+        writeln!(mod_rs, "pub mod current {{ pub use super::atmega328::*; }}")?;
+        writeln!(mod_rs)?;
+        writeln!(mod_rs, "/// {}", CURRENT_MOD_SUMMARY)?;
+        writeln!(mod_rs, "// If we are targeting AVR, lookup the current device's module")?;
+        writeln!(mod_rs, "// and alias it to the `current` module.")?;
+        writeln!(mod_rs, "#[cfg(target_arch = \"avr\")]")?;
+        writeln!(mod_rs, "pub mod current {{")?;
+        writeln!(mod_rs, "    // NOTE: 'target_cpu' is a cfg flag specific to the avr-rust fork")?;
+        for module_name in module_names {
+            writeln!(mod_rs, "    #[cfg(target_cpu = \"{}\")] pub use super::{} as current;",
+                     module_name, module_name)?;
         }
         writeln!(mod_rs, "}}")?;
 
@@ -90,74 +106,67 @@ mod gen {
         Ok(())
     }
 
-    pub fn mcu_module_doc(mcu: &Mcu, w: &mut dyn Write) -> Result<(), io::Error> {
+    /// Gets the module name for a mcu.
+    fn mcu_module_name(mcu: &Mcu) -> String {
+        mcu.device.name.to_lowercase()
+    }
+
+    pub fn mcu_module_doc(mcu: &Mcu, w: &mut dyn Write)
+        -> Result<(), io::Error> {
         writeln!(w, "//! The AVR {} microcontroller", mcu.device.name)?;
-        writeln!(w,
-            "//!\n\
-             //! # Variants\n\
-             //! |        | Pinout | Mcu age | Operating temperature | Operating voltage | Max speed |\n\
-             //! |--------|--------|---------|-----------------------|-------------------|-----------|"
-        )?;
-        for variant in &mcu.variants {
-            let pinout_label =
-                variant.pinout.as_ref().map(|p| p.replace('_', "-").to_owned()).unwrap_or_default();
+        writeln!(w, "//!")?;
+
+        writeln!(w, "//! # Variants")?;
+        writeln!(w, "//! |        | Pinout | Mcu age | Operating temperature | Operating voltage | Max speed |")?;
+        writeln!(w, "//! |--------|--------|---------|-----------------------|-------------------|-----------|")?;
+        for variant in mcu.variants.iter() {
+            let pinout_label = variant.pinout.as_ref().map(|p| p.replace('_', "-").to_owned()).unwrap_or_else(|| String::new());
             let speed_mhz = variant.speed_max_hz / 1_000_000;
-            writeln!(
-                w,
-                "//! | {} | {} | {} | {}°C - {}°C | {}V - {}V | {} MHz |",
-                variant.name,
-                pinout_label,
-                variant.package,
-                variant.temperature_min,
-                variant.temperature_max,
-                variant.voltage_min,
-                variant.voltage_max,
-                speed_mhz
-            )?;
+            writeln!(w, "//! | {} | {} | {} | {}°C - {}°C | {}V - {}V | {} MHz |",
+                     variant.name, pinout_label,
+                     variant.package, variant.temperature_min,
+                     variant.temperature_max, variant.voltage_min, variant.voltage_max,
+                     speed_mhz)?;
         }
         writeln!(w, "//!")?;
 
         Ok(())
     }
 
-    pub fn mcu_module_code(mcu: &Mcu, w: &mut impl Write) -> Result<(), io::Error> {
+    pub fn mcu_module_code(mcu: &Mcu, w: &mut dyn Write)
+        -> Result<(), io::Error>  {
         let registers = ordered_registers(mcu);
         let register_bitfields = documentable_bitfields(&registers);
 
-        writeln!(w, "#![allow(non_upper_case_globals)]\n")?;
-        for register in &registers {
+        writeln!(w, "#![allow(non_upper_case_globals)]")?;
+        writeln!(w)?;
+
+        for register in registers.iter() {
             let ty = integer_type(register.size);
 
-            match !register.caption.is_empty() {
-                true => writeln!(w, "/// {}", format_caption(&register.caption))?,
-                false => writeln!(w, "/// `{}` register", register.name)?,
+            if !register.caption.is_empty() {
+                writeln!(w, "/// {}", format_caption(&register.caption))?;
+            } else {
+                writeln!(w, "/// `{}` register", register.name)?;
             }
 
-            let mut bitfields = register_bitfields
-                .iter()
-                .filter(|(reg, _)| *reg == register)
-                .map(|(_, bitfield)| bitfield)
-                .peekable();
+            let mut bitfields = register_bitfields.iter().filter_map(|&(reg,bitfield)| {
+                if reg == register { Some(bitfield) } else { None }
+            }).peekable();
 
             if bitfields.peek().is_some() {
-                writeln!(
-                    w,
-                    "///\n\
-                     /// Bitfields:\n\
-                     ///\n\
-                     /// | Name | Mask (binary) |\n\
-                     /// | ---- | ------------- |"
-                )?;
-                for bitfield in bitfields {
+                writeln!(w, "///")?;
+                writeln!(w, "/// Bitfields:")?;
+                writeln!(w, "///")?;
+                writeln!(w, "/// | Name | Mask (binary) |")?;
+                writeln!(w, "/// | ---- | ------------- |")?;
+                while let Some(bitfield) = bitfields.next() {
                     writeln!(w, "/// | {} | {:b} |", bitfield.name, bitfield.mask)?;
                 }
             }
 
-            writeln!(
-                w,
-                "pub const {}: *mut {} = {:#X} as *mut {};",
-                register.name, ty, register.offset, ty
-            )?;
+            writeln!(w, "pub const {}: *mut {} = {:#X} as *mut {};",
+                     register.name, ty, register.offset, ty)?;
             writeln!(w)?;
         }
 
@@ -165,26 +174,26 @@ mod gen {
             let ty = integer_type(bitfield.size);
 
             writeln!(w, "/// Bitfield on register `{}`", register.name)?;
-            writeln!(
-                w,
-                "pub const {}: *mut {} = {:#X} as *mut {};",
-                bitfield.name, ty, bitfield.mask, ty
-            )?;
+            writeln!(w, "pub const {}: *mut {} = {:#X} as *mut {};",
+                     bitfield.name, ty, bitfield.mask, ty)?;
             writeln!(w)?;
+
         }
 
         for value_group in ordered_value_groups(&mcu) {
-            match !value_group.caption.is_empty() {
-                true => writeln!(w, "/// {}", value_group.caption)?,
-                false => writeln!(w, "/// `{}` value group", value_group.name)?,
-            };
-            writeln!(w, "#[allow(non_upper_case_globals)]")?;
+            if !value_group.caption.is_empty() {
+                writeln!(w, "/// {}", value_group.caption)?;
+            } else {
+                writeln!(w, "/// `{}` value group", value_group.name)?;
+            }
+            writeln!(w, "#[allow(non_upper_case_globals)]")? ;
             writeln!(w, "pub mod {} {{", value_group.name.to_lowercase())?;
-            for val in &unique_value_group_values(&value_group) {
+            for val in unique_value_group_values(&value_group).iter() {
                 let first_char = val.name.chars().next().expect("empty value name");
-                let name = match !first_char.is_alphabetic() && first_char != '_' {
-                    true => format!("_{}", val.name),
-                    false => val.name.to_owned(),
+                let name = if !first_char.is_alphabetic() && first_char != '_' {
+                    format!("_{}", val.name)
+                } else {
+                    val.name.to_owned()
                 };
 
                 if !val.caption.is_empty() {
@@ -201,8 +210,12 @@ mod gen {
     }
 
     fn format_caption(caption: &str) -> String {
-        // Escape special characters and trim
-        let mut result = caption.replace("[", "\\[").replace("]", "\\]").trim().to_owned();
+        let mut result = caption.to_owned();
+        // Escape special characters in markdown
+        result = result.replace("[", "\\[").replace("]", "\\]");
+
+        // Trim and make a sentence
+        result = result.trim().to_owned();
         if !result.ends_with('.') {
             result.push('.')
         }
@@ -212,26 +225,35 @@ mod gen {
     fn ordered_registers(mcu: &Mcu) -> Vec<Register> {
         let mut unique_registers = self::unique_registers(mcu);
         insert_high_low_variants(&mut unique_registers);
+
         let mut registers: Vec<Register> = unique_registers.into_iter().map(|a| a.1).collect();
         registers.sort_by_key(|r| r.offset);
+
         registers
     }
 
     fn ordered_value_groups(mcu: &Mcu) -> Vec<ValueGroup> {
-        let mut all_value_groups = Vec::new();
-        for module in &mcu.modules {
-            all_value_groups.extend(module.value_groups.iter().cloned());
+        let mut value_groups = Vec::new();
+        for module in mcu.modules.iter() {
+            for value_group in module.value_groups.iter() {
+                value_groups.push(value_group.clone());
+            }
         }
-        let mut all_value_groups = unique_value_groups(&all_value_groups);
-        all_value_groups.sort_by(|vg1, vg2| vg1.partial_cmp(vg2).unwrap());
-        all_value_groups
+        value_groups = unique_value_groups(&value_groups);
+        value_groups.sort_by(|vg1, vg2| vg1.partial_cmp(vg2).unwrap());
+
+        value_groups
     }
 
     fn insert_high_low_variants(registers: &mut HashMap<String, Register>) {
-        let wide_registers: Vec<_> = registers.values().filter(|r| r.size == 2).cloned().collect();
+        let wide_registers: Vec<_> = registers.values()
+                                        .filter(|r| r.size == 2)
+                                        .cloned()
+                                        .collect();
 
         for r in wide_registers {
             let (high, low) = high_low_variants(&r);
+
             if !registers.contains_key(&high.name) {
                 registers.insert(high.name.clone(), high);
             }
@@ -245,39 +267,37 @@ mod gen {
         assert_eq!(2, r.size, "only 16-bit registers have high low variants");
 
         (
-            Register {
-                name: r.name.clone() + "H",
-                caption: r.caption.clone() + " high byte",
-                offset: r.offset + 1,
-                size: r.size / 2,
-                mask: None,
-                bitfields: Vec::new(), // these are already in parent.
-                rw: r.rw.clone(),
-            },
-            Register {
-                name: r.name.clone() + "L",
-                caption: r.caption.clone() + " low byte",
-                offset: r.offset + 0,
-                size: r.size / 2,
-                mask: None,
-                bitfields: Vec::new(), // these are already in parent.
-                rw: r.rw.clone(),
-            },
+            Register { name: r.name.clone() + "H",
+                       caption: r.caption.clone() + " high byte",
+                       offset: r.offset + 1,
+                       size: r.size / 2,
+                       mask: None,
+                       bitfields: Vec::new(), // these are already in parent.
+                       rw: r.rw.clone() },
+            Register { name: r.name.clone() + "L",
+                       caption: r.caption.clone() + " low byte",
+                       offset: r.offset + 0,
+                       size: r.size / 2,
+                       mask: None,
+                       bitfields: Vec::new(), // these are already in parent.
+                       rw: r.rw.clone() },
         )
     }
 
     fn unique_registers(mcu: &Mcu) -> HashMap<String, Register> {
         let mut result = HashMap::new();
 
-        for module in &mcu.modules {
-            for register_group in &module.register_groups {
-                for register in &register_group.registers {
+        for module in mcu.modules.iter() {
+            for register_group in module.register_groups.iter() {
+                for register in register_group.registers.iter() {
                     // Check if we've already seen this register.
                     // Remove it if so and combine it with the current Register.
-                    let r: Register = match result.remove(&register.name) {
-                        Some(ref existing) => register.union(existing),
-                        None => register.clone(),
+                    let r: Register = if let Some(ref existing) = result.remove(&register.name) {
+                        register.union(existing)
+                    } else {
+                        register.clone()
                     };
+
                     result.insert(r.name.clone(), r);
                 }
             }
@@ -291,13 +311,14 @@ mod gen {
         loop {
             let mut remove_idx = None;
             for (idx, value_group) in value_groups.iter().enumerate() {
-                if value_groups
-                    .iter()
-                    .filter(|vg| vg.name == value_group.name)
-                    .inspect(|vg| assert_eq!(*vg, value_group))
-                    .count()
-                    > 1
-                {
+                if value_groups.iter().filter(|vg| {
+                    if vg.name == value_group.name {
+                        assert_eq!(*vg, value_group);
+                        true
+                    } else {
+                        false
+                    }
+                }).count() > 1 {
                     remove_idx = Some(idx);
                 }
             }
@@ -318,7 +339,7 @@ mod gen {
     fn unique_value_group_values(value_group: &ValueGroup) -> Vec<Value> {
         let mut values = value_group.values.clone();
         let mut remove_names = HashSet::new();
-        for value in &values {
+        for value in values.iter() {
             if values.iter().filter(|v| v.name == value.name).count() > 1 {
                 remove_names.insert(value.name.to_owned());
             }
@@ -360,23 +381,26 @@ mod gen {
         // A hash map of bitfield names to possible instantiations.
         let mut history: HashMap<&str, Vec<(&Register, &Bitfield)>> = HashMap::new();
 
-        for register in registers {
-            for bitfield in &register.bitfields {
-                let bitfields = history.entry(&bitfield.name).or_insert(Vec::new());
+        for register in registers.iter(){
+            for bitfield in register.bitfields.iter() {
+                let bitfields = history.entry(&bitfield.name).
+                    or_insert_with(|| Vec::new());
                 // Track the bitfield of this bitfield.
                 bitfields.push((register, bitfield));
             }
         }
 
         // Convert the hash map to a list and sort it so it is deterministic.
-        let mut register_bitfields: Vec<_> =
-            history.into_iter().map(|(_, register_bitfields)| register_bitfields).collect();
+        let mut register_bitfields: Vec<_> = history.into_iter().map(|(_, register_bitfields)| register_bitfields).collect();
         register_bitfields.sort_by_key(|register_bitfields| &register_bitfields[0].0.name);
 
-        let unique_bitfields = register_bitfields
-            .into_iter()
-            .filter(|bitfields| bitfields.len() == 1)
-            .map(|bitfields| bitfields.into_iter().next().unwrap());
+        let unique_bitfields = register_bitfields.into_iter().filter_map(|register_bitfields| {
+            if register_bitfields.len() == 1 {
+                Some(register_bitfields.into_iter().next().unwrap())
+            } else {
+                None
+            }
+        });
 
         // Skip bitmasks that cover all bits or share the same name as their parent register.
         // There are strange cases like this in the packfiles.
@@ -387,9 +411,9 @@ mod gen {
                 _ => panic!("register is too large"),
             };
 
-            (bitfield.mask != full_mask)
-                && (bitfield.name != register.name)
-                && !register_names.contains(&bitfield.name[..])
+            bitfield.mask != full_mask &&
+                bitfield.name != register.name &&
+                !register_names.contains(&bitfield.name[..])
         });
 
         bitfields.collect()
