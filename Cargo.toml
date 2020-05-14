@@ -1,6 +1,6 @@
 [package]
 name = "avrd"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
 
 description = """
@@ -15,16 +15,16 @@ keywords = ["avr", "mcu", "io", "constants", "pins"]
 categories = ["embedded"]
 
 [features]
-default = []
+default = [ "all_mcus" ]
 # Enable all microcontrollers.
 all_mcus = []
 
 [dependencies]
 
 [build-dependencies]
-avr-mcu = "0.2"
+avr-mcu = "0.3"
 
 [profile.dev]
 # Most of the build consists of generating the mcu description files. So
 # enable optimizations to speed this process.
-opt-level = 2
+opt-level = 3
