@@ -1,32 +1,47 @@
 extern crate avr_mcu;
 
-use std::path::Path;
+use clap::{App, Arg};
+
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug)]
+struct Config {
+    output_directory: PathBuf,
+    mcus: Vec<avr_mcu::Mcu>,
+}
+
+fn get_cli_config() -> Config {
+    let matches = App::new(env!("CARGO_PKG_NAME"))
+        .version("1.0")
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .arg(Arg::with_name("out-dir")
+            .short("o")
+            .long("out-dir")
+            .value_name("DIRECTORY")
+            .help("Sets the directory path that will contain the newly generated Rust source code files")
+            .takes_value(true)
+            .required(true))
+        .arg(Arg::with_name("mcus")
+            .short("m")
+            .long("mcus")
+            .value_name("COMMA SEPARATED MCU LIST")
+            .help("Generate outputs for a specific microcontroller or microcontrollers rather than the default of all")
+            .takes_value(true))
+            .get_matches();
+    let output_directory = Path::new(matches.value_of("out-dir").unwrap()).to_owned();
+
+    let mcus = matches.values_of("mcus")
+        .map(|m| m.flat_map(|a| a.split(",").map(|s| avr_mcu::microcontroller(s).clone())).collect())
+        .unwrap_or_else(|| avr_mcu::microcontrollers().to_owned() );
+
+    Config { output_directory, mcus }
+}
 
 fn main() {
-    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config = get_cli_config();
 
-    let mcus = if cfg!(feature = "all_mcus") {
-        avr_mcu::microcontrollers().to_owned()
-    } else {
-        // By default, when compiling for AVR we should hard error if
-        // microcontroller is not specified.
-        if cfg!(arch = "avr") {
-            let current_mcu = avr_mcu::current::mcu()
-                .expect("no target cpu set");
-            vec![current_mcu]
-        } else {
-            // On non-avr architectures, support all microcontrollers.
-            avr_mcu::microcontrollers().to_owned()
-        }
-    };
-
-    // Useful for test
-    // let mcus = vec![
-    //     avr_mcu::microcontroller("ata5795").clone(),
-    //     avr_mcu::microcontroller("atmega328").clone(), // required when compiling for PC
-    // ];
-
-    gen::all(&crate_root.join("src").join("gen"), &mcus).unwrap();
+    gen::all(&config.output_directory, &config.mcus).unwrap();
 }
 
 mod gen {
