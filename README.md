@@ -28,8 +28,8 @@ volatile_store(PORTB, 0x1f);
 
 Just include the crate as a dependency and it will work.
 
-## Usage on other architectures
+## Enabling all microcontrollers at once
 
-You need to compile with the `all_mcus` feature enabled, otherwise it will attempt
-to target the current AVR microcontroller, which isn't set in these cases.
+You may want to compile with the `all-mcus` feature enabled, which enables
+modules for all microcontrollers to be compiled and included at once.
 

@@ -1,0 +1,18 @@
+[package]
+name = "avrd-device-generator"
+version = "0.0.0"
+authors = ["Dylan McKay <me@dylanmckay.io>"]
+publish = false
+edition = "2018"
+
+description = """
+Device-specific constants and information for all AVR microcontrollers
+"""
+
+license = "MIT"
+repository = "https://github.com/avr-rust/avrd"
+documentation = "https://docs.rs/avrd"
+
+[dependencies]
+avr-mcu = "0.3"
+clap = "2.33"

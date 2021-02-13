@@ -1,7 +1,14 @@
+[workspace]
+members = [
+  ".",
+  "device_generator",
+]
+
 [package]
 name = "avrd"
-version = "0.3.1"
+version = "1.0.0"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
+edition = "2018"
 
 description = """
 Device-specific constants and information for all AVR microcontrollers
@@ -17,7 +24,7 @@ categories = ["embedded"]
 [features]
 default = []
 # Enable all microcontrollers.
-all_mcus = []
+all-mcus = []
 
 [dependencies]
 
@@ -28,3 +35,6 @@ avr-mcu = "0.3"
 # Most of the build consists of generating the mcu description files. So
 # enable optimizations to speed this process.
 opt-level = 2
+
+[package.metadata.docs.rs]
+all-features = true
