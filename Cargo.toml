@@ -23,7 +23,7 @@ categories = ["embedded"]
 [features]
 default = []
 # Enable all microcontrollers.
-all_mcus = []
+all-mcus = []
 
 [dependencies]
 
@@ -34,3 +34,6 @@ avr-mcu = "0.3"
 # Most of the build consists of generating the mcu description files. So
 # enable optimizations to speed this process.
 opt-level = 2
+
+[package.metadata.docs.rs]
+all-features = true

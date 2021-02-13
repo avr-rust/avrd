@@ -4,6 +4,8 @@ use clap::{App, Arg};
 
 use std::path::{Path, PathBuf};
 
+const DEFAULT_MCU_FOR_NON_AVR: &'static str = "atmega328";
+
 #[derive(Clone, Debug)]
 struct Config {
     output_directory: PathBuf,
@@ -74,38 +76,35 @@ mod gen {
     fn generate_entry_module(output_path: &Path, module_names: &[String]) -> Result<(), io::Error> {
         let mut mod_rs = File::create(output_path.join("mod.rs"))?;
 
+        const CURRENT_MOD_SUMMARY: &'static str = "Contains definitions for the current AVR device being targeted.";
+
         writeln!(mod_rs, "// Device definitions")?;
+        writeln!(mod_rs)?;
         for module_name in module_names {
-            writeln!(mod_rs, "pub mod {};", module_name)?;
+            if module_name == crate::DEFAULT_MCU_FOR_NON_AVR {
+                writeln!(mod_rs, "/// The module containing the values for the '{}' microcontroller", module_name)?;
+                writeln!(mod_rs, "///")?;
+                writeln!(mod_rs, "/// This is the default MCU when targeting a non-AVR target.")?;
+
+                writeln!(mod_rs, "#[cfg(any(not(target_arch = \"avr\"), avr_mcu_{}, feature = \"all-mcus\"))] pub mod {};", module_name, module_name)?;
+
+                writeln!(mod_rs, "/// {} **The '{}' is the default when targeting non-AVR devices.**", CURRENT_MOD_SUMMARY, module_name)?;
+
+                writeln!(mod_rs, "#[cfg(not(target_arch = \"avr\"))] pub mod current {{ pub use super::{}::*; }}", module_name)?;
+
+                writeln!(mod_rs, "/// {} **This is currently the '{}'**.", CURRENT_MOD_SUMMARY, module_name)?;
+                writeln!(mod_rs, "#[cfg(all(target_arch = \"avr\", avr_mcu_{}))] pub mod current {{ pub use super::{}::*; }}",
+                         module_name, module_name)?;
+            } else {
+                writeln!(mod_rs, "/// The module containing the values for the '{}' microcontroller", module_name)?;
+                writeln!(mod_rs, "#[cfg(any(avr_mcu_{}, feature = \"all-mcus\"))] pub mod {};", module_name, module_name)?;
+                writeln!(mod_rs, "/// {} **This is currently the '{}'**.", CURRENT_MOD_SUMMARY, module_name)?;
+                writeln!(mod_rs, "#[cfg(all(target_arch = \"avr\", avr_mcu_{}))] pub mod current {{ pub use super::{}::*; }}",
+                         module_name, module_name)?;
+            }
+            writeln!(mod_rs)?;
         }
         writeln!(mod_rs)?;
-
-        const CURRENT_MOD_SUMMARY: &'static str = "Contains definitions for the current AVR device";
-
-        writeln!(mod_rs, "/// {}", CURRENT_MOD_SUMMARY)?;
-        writeln!(mod_rs, "///")?;
-        writeln!(mod_rs, "/// **NOTE**: We are showing the ATmega328 here, even though the library")?;
-        writeln!(mod_rs, "/// is not targeting a real AVR device. If you compile this library for")?;
-        writeln!(mod_rs, "/// a specific AVR MCU, the module for that device will aliased here.")?;
-        writeln!(mod_rs, "// If we are targeting a non-AVR device, just pick the ATmega328p so")?;
-        writeln!(mod_rs, "// that users can see what the API would look like")?;
-        writeln!(mod_rs, "//")?;
-        writeln!(mod_rs, "// Note that we reexport rather than alias so that we can add a note about")?;
-        writeln!(mod_rs, "// this behaviour to the documentation.")?;
-        writeln!(mod_rs, "#[cfg(not(target_arch = \"avr\"))]")?;
-        writeln!(mod_rs, "pub mod current {{ pub use super::atmega328::*; }}")?;
-        writeln!(mod_rs)?;
-        writeln!(mod_rs, "/// {}", CURRENT_MOD_SUMMARY)?;
-        writeln!(mod_rs, "// If we are targeting AVR, lookup the current device's module")?;
-        writeln!(mod_rs, "// and alias it to the `current` module.")?;
-        writeln!(mod_rs, "#[cfg(target_arch = \"avr\")]")?;
-        writeln!(mod_rs, "pub mod current {{")?;
-        writeln!(mod_rs, "    // NOTE: 'target_cpu' is a cfg flag specific to the avr-rust fork")?;
-        for module_name in module_names {
-            writeln!(mod_rs, "    #[cfg(target_cpu = \"{}\")] pub use super::{} as current;",
-                     module_name, module_name)?;
-        }
-        writeln!(mod_rs, "}}")?;
 
         Ok(())
     }
