@@ -1,8 +1,10 @@
 #! /bin/sh -ea
 
-CRATE_DIR=$(dirname $0)
+CRATE_DIR=$(realpath $(dirname $0))
 
-cd "${CRATE_DIR}/device-generator"
+echo "create dir: '${CRATE_DIR}'"
+
+cd "${CRATE_DIR}/device_generator"
 
 echo "Generating cores"
 
