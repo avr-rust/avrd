@@ -8,6 +8,7 @@ members = [
 name = "avrd"
 version = "0.3.1"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
+edition = "2018"
 
 description = """
 Device-specific constants and information for all AVR microcontrollers
