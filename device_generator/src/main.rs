@@ -164,17 +164,18 @@ mod gen {
                 writeln!(w, "/// `{}` register", register.name)?;
             }
 
-            let mut bitfields = register_bitfields.iter().filter_map(|&(reg,bitfield)| {
+            let mut bitfields: Vec<&'_ Bitfield> = register_bitfields.iter().filter_map(|&(reg,bitfield)| {
                 if reg == register { Some(bitfield) } else { None }
-            }).peekable();
+            }).collect();
+            bitfields.sort_by_key(|b| b.mask);
 
-            if bitfields.peek().is_some() {
+            if bitfields.len() > 0 {
                 writeln!(w, "///")?;
                 writeln!(w, "/// Bitfields:")?;
                 writeln!(w, "///")?;
                 writeln!(w, "/// | Name | Mask (binary) |")?;
                 writeln!(w, "/// | ---- | ------------- |")?;
-                while let Some(bitfield) = bitfields.next() {
+                for bitfield in bitfields {
                     writeln!(w, "/// | {} | {:b} |", bitfield.name, bitfield.mask)?;
                 }
             }
